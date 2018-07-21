@@ -1,6 +1,6 @@
 import random
 import time
-from src.core.Mongo import Mongo
+from src.core.service.Mongo import Mongo
 
 class TestWrite:
 

@@ -1,6 +1,7 @@
-from src.core.Mongo import Mongo
-from src.core.Collection import Collection
-from src.core.CollectionPart import CollectionPart
+from src.core.service.Mongo import Mongo
+from src.core.clone.Collection import Collection
+from src.core.clone.BasicCollectionPart import BasicCollectionPart
+from src.core.clone.OplogCollectionPart import OplogCollectionPart
 
 class Core:
 
@@ -22,8 +23,16 @@ class Core:
 
                 for inputs in collection_part_inputs:
                     inputs['configuration'] = self.configuration
-                    collection_part = CollectionPart(**inputs)
+                    collection_part = self.create_collection_part(inputs)
                     collection_part.sync()
 
         print('End synchronisation of every database.')
 
+    """
+        Create the appropriate CollectionPart instance
+    """
+    def create_collection_part(self, inputs):
+        if inputs['db'] == 'local' and inputs['coll'] == 'oplog.rs':
+            return OplogCollectionPart(**inputs)
+        else:
+            return BasicCollectionPart(**inputs)

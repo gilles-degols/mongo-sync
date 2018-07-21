@@ -1,4 +1,4 @@
-from src.core.Mongo import Mongo
+from src.core.service.Mongo import Mongo
 import time
 import pymongo
 from bson.objectid import ObjectId
@@ -51,10 +51,12 @@ class Collection:
         the first value is the start of it, the second value, the end of it.
     """
     def list_seeds(self):
-        # First, we need to be sure that we have an _id and if that's an objectid, otherwise we cannot use the same technique
+        # First, we need to be sure that we have an _id and if that's an objectid, otherwise we cannot use the same technique.
+        # The oplog should only be tailed by one thread at a time, so we want to be sure to never create seeds for it.
         id_type = self.mongo_primary.id_type(self.db, self.coll)
-        if id_type['has_id'] is False or id_type['is_object_id'] is False:
+        if id_type['has_id'] is False or id_type['is_object_id'] is False or (self.db == "local" and self.coll == "oplog.rs"):
             return [None, None]
+
 
         # Number of seeds we would like
         quantity = self.configuration.internal_maximum_seeds()

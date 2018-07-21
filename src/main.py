@@ -1,6 +1,6 @@
-from src.core.Configuration import Configuration
+from src.core.service.Configuration import Configuration
 from src.core.Core import Core
-from src.core.TestWrite import TestWrite
+from src.core.service.TestWrite import TestWrite
 from sys import argv
 
 # python3.6 -m src.main test-write conf/mongosync.json

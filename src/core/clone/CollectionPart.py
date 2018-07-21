@@ -1,6 +1,6 @@
 
 import time
-from src.core.Mongo import Mongo
+from src.core.service.Mongo import Mongo
 
 class CollectionPart:
 
@@ -25,6 +25,25 @@ class CollectionPart:
         self.previous_id = None
 
     """
+        Indicates if we should continue pulling data from the collection or not. For a BasicCollectionPart this will be easy
+    """
+    def continue_fetching(self, received_quantity, expected_quantity):
+        raise ValueError('To implement in the children.')
+
+    """
+        Try to insert a bunch of documents, while avoiding crashes if the total size is bigger than 16MB
+    """
+    def insert_subset(self, documents):
+        try:
+            self.mongo_secondary.insert_many(self.db, self.coll, documents)
+        except Exception as e:
+            print('Exception while trying to insert ' + str(len(documents)) + ' documents in ' + str(
+                    self) + ' (' + str(e) + '). Try once again, but one document after another.')
+            # Maybe we exceeded the 16MB, so better insert every document separately
+            for doc in documents:
+                self.mongo_secondary.insert_many(self.db, self.coll, [doc])
+
+    """
         In charge of syncing the entire part of the collection assigned to it, so every document between two given
         seeds. The collection must be initially created by the Collection class, this is not the job of this class.
     """
@@ -46,15 +65,14 @@ class CollectionPart:
         read_time = 0
         write_time = 0
         i = 0
-        print(str(self)+' (start-sync): '+str(expected_documents)+' docs, ~'+str(int(storage_size_part))+'GB.')
+        print(str(self)+' (start-sync): ~'+str(expected_documents)+' docs, ~'+str(int(storage_size_part))+'GB.')
         while objects_in_it:
             raw_stats = self.sync_section(offset, limit_read, limit_write)
             offset += raw_stats['quantity']
             read_time += raw_stats['read_time']
             write_time += raw_stats['write_time']
 
-            if raw_stats['quantity'] < limit_read:
-                objects_in_it = False
+            objects_in_it = self.continue_fetching(raw_stats['quantity'], limit_read)
 
             i += 1
             if i % 50 == 0:
@@ -87,53 +105,7 @@ class CollectionPart:
         at the wrong time.
     """
     def sync_section(self, offset, limit_read, limit_write):
-        # Fetching objects to sync from the primary. Not all documents have a "_id" field, so be careful. Performance will be very
-        # slow if you do not have it, and it might crash if there are too many documents without any "_id" (TODO we should switch
-        # to cursors in that case). We assume that if a collection contains a document with "_id", all documents have it.
-        st = time.time()
-        query = {
-            '_id':{
-                '$gte': self.seed_start['_id'],
-                '$lte': self.seed_end['_id'] # To be sure the final item, it's better to do one extra insert each time
-            }
-        }
-        skip = 0
-        if self.previous_id is not None:
-            query['_id']['$gte'] = self.previous_id
-
-        if self.seed_start['_id'] is None or self.seed_end['_id'] is None:
-            del query['_id']['$lte']
-            if self.previous_id is None:
-                # Special code to handle collection without any _id at all, or at the first iteration
-                query = {}
-                skip = offset
-
-        objects = list(self.mongo_primary.find(self.db, self.coll, query=query, skip=skip, limit=limit_read, sort_field='_id'))
-        read_time = time.time() - st
-
-        # Writing the objects to the secondary
-        st = time.time()
-        for i in range(0, len(objects), limit_write):
-            try:
-                self.mongo_secondary.insert_many(self.db, self.coll, objects[i:i + limit_write])
-            except Exception as e:
-                print(
-                    'Exception while trying to insert ' + str(len(objects[i:i + limit_write])) + ' documents in ' + str(
-                        self) + ' (' + str(e) + '). Try once again, but one document after another.')
-                # Maybe we exceeded the 16MB, so better insert every document separately
-                for j in range(i, i + limit_write):
-                    self.mongo_secondary.insert_many(self.db, self.coll, [objects[j]])
-        write_time = time.time() - st
-
-        # Now we can assume that we correctly inserted the expected documents, so we can store the new start for the section
-        # to copy
-        if len(objects) >= 1 and '_id' in objects[-1]:
-            self.previous_id = objects[-1]['_id']
-
-        return {'quantity': len(objects), 'read_time': read_time, 'write_time': write_time}
-
-
-
+        raise ValueError('Not implemented, to override')
 
     def __str__(self):
         return 'CollectionPart:' + self.db + '.' + self.coll+':['+str(self.seed_start['_id'])+';'+str(self.seed_end['_id'])+']'

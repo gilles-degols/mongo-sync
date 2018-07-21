@@ -11,7 +11,6 @@ from bson.objectid import ObjectId
 import pymongo
 from pymongo.errors import PyMongoError
 from pymongo import MongoClient
-from src.core.Configuration import Configuration
 from pymongo.collection import ReturnDocument
 
 from functools import wraps
@@ -114,6 +113,22 @@ class Mongo:
     @retry_connection
     def find(self, db, coll, query, skip, limit, projection=None, sort_field = '_id', sort_order=pymongo.ASCENDING):
         return self.instance[db][coll].find(query, projection, no_cursor_timeout=True).skip(skip).limit(limit).sort(sort_field, sort_order)
+
+    """
+        A specific find method to read the oplog with a tailable cursor
+    """
+    @retry_connection
+    def find_oplog(self, query, skip, limit, projection=None):
+        if len(query) == 0:
+            # If no query given, we would be automatically put at the end of the oplog, but we want to start from the begging
+            try:
+                first = self.instance["local"]["oplog.rs"].find().sort('$natural', pymongo.ASCENDING).limit(-1).next()
+                query = {'ts':{'$gt':first['ts']}}
+            except Exception as e:
+                print('Problem while fetching the first element of the oplog: '+str(e)+'. We start from the end instead.')
+                query = {}
+
+        return self.instance["local"]["oplog.rs"].find(query, projection, no_cursor_timeout=True, cursor_type=pymongo.CursorType.TAILABLE_AWAIT, oplog_replay=True).skip(skip).limit(limit)
 
     """
         A FindOneAndUpdate which always return the document after modification
