@@ -45,7 +45,7 @@ class TestWrite:
                 dt = time.time() - st
                 print('Inserted '+str(n)+' documents in '+str(int(dt))+'s. Current size is '+str(int(current_size/(1024 ** 3)))+'/'+str(self.coll_expected_size)+'GB.')
 
-        print('Insertd ' + str(n) + ' documents in ' + str(int(dt)) + 's. Current size is ' + str(int(current_size / (1024 ** 3))) + '/' + str(self.coll_expected_size) + 'GB.')
+        print('Inserted ' + str(n) + ' documents in ' + str(int(dt)) + 's. Current size is ' + str(int(current_size / (1024 ** 3))) + '/' + str(self.coll_expected_size) + 'GB.')
         print('The end!')
 
     """

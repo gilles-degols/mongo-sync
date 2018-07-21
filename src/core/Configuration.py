@@ -28,7 +28,13 @@ class Configuration:
         Return the mongo host which will be the basis for the synchronisation
     """
     def mongo_host_in_sync(self):
-        return self.conf['mongo']['host']['out_of_sync']
+        return self.conf['mongo']['host']['in_sync']
+
+    """
+        To allow a long synchronisation without crash, we might need to set a big number for the oplog
+    """
+    def mongo_oplog_size(self):
+        return self.conf['mongo']['oplog_size_GB']
 
     """
         Maximum number of seconds we will try to reconnect to MongoDB if we lost the connection at inappropriate time.
@@ -59,6 +65,13 @@ class Configuration:
     """
     def internal_database(self):
         return self.conf['internal']['database']
+
+    """
+        The maximum number of seeds we want to have for any collection. For small collection we can arbitrarily decide
+        to reduce their number.
+    """
+    def internal_maximum_seeds(self):
+        return self.conf['internal']['maximum_seeds']
 
     """
         The collection to use to write a lot of data for performance test

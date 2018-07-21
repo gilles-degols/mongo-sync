@@ -2,15 +2,17 @@
   "mongo": {
     "host": {
       "note": "The mongosync command must be launched on the out_of_sync server.",
-      "out_of_sync": "127.0.0.1:27017",
-      "in_sync": "primary:27017"
+      "out_of_sync": "node2:27018",
+      "in_sync": "node3:27017"
     },
+    "oplog_size_GB": 6,
     "access_attempt_s": 6,
     "write_acknowledgement": 1,
     "write_j": false
   },
   "internal": {
     "database": "mongosync",
+    "maximum_seeds": 1000,
     "test_write_collection": "testWrite",
     "test_write_size_GB": 5,
     "test_write_document_bytes": 10240

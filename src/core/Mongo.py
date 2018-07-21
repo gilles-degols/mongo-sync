@@ -6,7 +6,9 @@ import os
 import signal
 import subprocess
 import time
-
+from datetime import datetime, timezone
+from bson.objectid import ObjectId
+import pymongo
 from pymongo.errors import PyMongoError
 from pymongo import MongoClient
 from src.core.Configuration import Configuration
@@ -43,7 +45,6 @@ def retry_connection(view_func):
                 if new_connection_attempt is True:
                     time.sleep(0.5)
                     mongo.connect()
-                    mongo.load_internal()
                 # To easily see the queries done
                 # print('Run mongo query: '+str(args)+' with '+str(kwargs))
                 response = view_func(*args, **kwargs)
@@ -51,14 +52,14 @@ def retry_connection(view_func):
             except PyMongoError as e:
                 dt = time.time() - st
                 if dt >= mongo.configuration.mongo_access_attempt():
-                    print('Problem to execute the query, maybe we are disconnected from MongoDB. ' +
+                    print('Problem to execute the query ('+str(e)+'), maybe we are disconnected from MongoDB. ' +
                           'Max access attempt exceeded ('+str(int(dt))+'s >= '+str(mongo.configuration.mongo_access_attempt())+'). ' +
                           'Stop the mount.')
                     custom_kill(mongo.configuration)
                     # We want to exit the current loop
                     exit(1)
                 else:
-                    print('Problem to execute the query, maybe we are disconnected from MongoDB. Connect and try again.')
+                    print('Problem to execute the query ('+str(e)+'), maybe we are disconnected from MongoDB. Connect and try again.')
                     new_connection_attempt = True
 
     return wraps(view_func)(_decorator)
@@ -85,6 +86,14 @@ class Mongo:
         self.instance = MongoClient(mongo_path, w=self.configuration.mongo_write_acknowledgement(), j=self.configuration.mongo_write_j())
 
     """
+        Create a collection, useful for a cappped collection
+    """
+    @retry_connection
+    def create_collection(self, db, coll, capped=False, max=None, max_size=None):
+        database = self.instance[db]
+        return database.create_collection(coll, capped=capped, max=max, size=max_size)
+
+    """
         Create an index
     """
     @retry_connection
@@ -103,8 +112,8 @@ class Mongo:
         It needs to be handle on the caller side to avoid any problem.
     """
     @retry_connection
-    def find(self, db, coll, query, projection=None):
-        return self.instance[db][coll].find(query, projection, no_cursor_timeout=True)
+    def find(self, db, coll, query, skip, limit, projection=None, sort_field = '_id', sort_order=pymongo.ASCENDING):
+        return self.instance[db][coll].find(query, projection, no_cursor_timeout=True).skip(skip).limit(limit).sort(sort_field, sort_order)
 
     """
         A FindOneAndUpdate which always return the document after modification
@@ -113,6 +122,50 @@ class Mongo:
     def find_one_and_update(self, db, coll, query, update):
         result = self.instance[db][coll].find_one_and_update(query, update, return_document=ReturnDocument.AFTER)
         return result
+
+    """
+        A list of ids from a given collection, which could be use to "equally" split the collection. Return an empty list if not possible to do it.
+        Duplicate seeds are possible. _ids are not returned in any specific order.
+    """
+    def section_ids(self, db, coll, quantity):
+        # The "$sample" is slow, so we will try to generate random object ids ourselves
+
+        # We want to have some information about the smallest and biggest _id (we suppose that the _id is monotonously increasing)
+        first = list(self.find(db=db, coll=coll, query={}, skip=0, limit=1, projection=None, sort_field='_id', sort_order=pymongo.ASCENDING))
+        if len(first) == 0:
+            return []
+        last = list(self.find(db=db, coll=coll, query={}, skip=0, limit=1, projection=None, sort_field='_id', sort_order=pymongo.DESCENDING))
+        if len(last) == 0:
+            return []
+        first = first[0]
+        last = last[0]
+
+        # Arbitrarily generate object ids between the minimal/maximal values
+        first_timestamp = first['_id'].generation_time.replace(tzinfo=timezone.utc).timestamp()
+        last_timestamp = last['_id'].generation_time.replace(tzinfo=timezone.utc).timestamp()
+        step = int(max(1,(last_timestamp - first_timestamp) / quantity))
+        section_ids = []
+        for offset in range(int(first_timestamp), int(last_timestamp), step):
+            current_date = datetime.utcfromtimestamp(offset)
+            section_id = {'_id':ObjectId.from_datetime(current_date)}
+            section_ids.append(section_id)
+
+        return section_ids
+
+    """
+        Indicates if the collection contains at least one document with an "_id" field, and if it's an ObjectId 
+    """
+    def id_type(self, db, coll):
+        first = list(self.find(db=db, coll=coll, query={}, skip=0, limit=1, projection=None, sort_field='_id', sort_order=pymongo.ASCENDING))
+        if len(first) == 0:
+            return {'has_id':False,'is_object_id':False}
+        first = first[0]
+
+        has_id = '_id' in first
+        is_object_id = False
+        if has_id:
+            is_object_id = isinstance(first['_id'], ObjectId)
+        return {'has_id':has_id,'is_object_id':is_object_id}
 
     """
         A simple insert_one
@@ -126,7 +179,16 @@ class Mongo:
     """
     @retry_connection
     def insert_many(self, db, coll, documents):
-        return self.instance[db][coll].insert_many(documents, ordered=False, bypass_document_validation=True)
+        try:
+            result = self.instance[db][coll].insert_many(documents, ordered=False, bypass_document_validation=True)
+        except pymongo.errors.BulkWriteError as e:
+            # We don't want to crash on duplicate key errors
+            for err in e.details.get('writeErrors', []):
+                if err['code'] != 11000:
+                    print(e.details)
+                    raise e
+            result = []
+        return result
 
     """
         Stats on a given collection
@@ -150,6 +212,18 @@ class Mongo:
     @retry_connection
     def delete_many(self, db, coll, query):
         return self.instance[db][coll].delete_many(query)
+
+    """
+        List all databases
+    """
+    def list_databases(self):
+        return self.instance.database_names()
+
+    """
+        List all collections from a database
+    """
+    def list_collections(self, db):
+        return self.instance[db].list_collection_names()
 
     """
         The drop command is only used for development normally

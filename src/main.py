@@ -17,7 +17,7 @@ if __name__ == '__main__':
     configuration = Configuration()
 
     if operation == 'start':
-        core = Core()
+        core = Core(configuration=configuration)
         core.start()
     elif operation == 'test-write':
         test_write = TestWrite(configuration=configuration)
