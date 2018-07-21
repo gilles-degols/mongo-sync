@@ -31,7 +31,7 @@ class TestWrite:
         st = time.time()
         dt = 0
         while current_size < self.coll_expected_size * (1024 ** 3):
-            docs = [{"raw":self.random_string_from_seed(self.document_size)} for i in range(docs_per_insert)]
+            docs = [{"stuff":"hello","raw":self.random_string_from_seed(self.document_size)} for i in range(docs_per_insert)]
             self.mongo.insert_many(self.db, self.coll, docs)
             n += len(docs)
             i += 1
@@ -54,7 +54,7 @@ class TestWrite:
     """
     @staticmethod
     def generate_string_seed(size):
-        print('Generating string seed, it might take some time...')
+        print('Generate random string seed, it might take some time...')
         letters = 'azertyuiopqsdfghjklmwxcvbnAZERTYUIOPQSDFGHJKLMWXCVBN0123456789'
         return ''.join([random.choice(letters) for i in range(size)])
 
@@ -63,6 +63,5 @@ class TestWrite:
     """
     def random_string_from_seed(self, size):
         # In fact, really not random, but whatever, we'll hope MongoDB will not be able to compress the data too efficiently
-        print('Generate random string seed, it might take some time...')
         start = random.randint(0,len(self.string_seed) - size)
         return self.string_seed[start:start+size]

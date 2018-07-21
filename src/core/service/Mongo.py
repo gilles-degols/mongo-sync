@@ -111,8 +111,17 @@ class Mongo:
         It needs to be handle on the caller side to avoid any problem.
     """
     @retry_connection
-    def find(self, db, coll, query, skip, limit, projection=None, sort_field = '_id', sort_order=pymongo.ASCENDING):
-        return self.instance[db][coll].find(query, projection, no_cursor_timeout=True).skip(skip).limit(limit).sort(sort_field, sort_order)
+    def find(self, db, coll, query, skip=0, limit=0, projection=None, sort_field = '_id', sort_order=pymongo.ASCENDING):
+        # cursor_type=pymongo.CursorType.EXHAUST
+        com = self.instance[db][coll].find(query, projection, no_cursor_timeout=True)
+        if skip > 0:
+            com = com.skip(skip)
+        if limit > 0:
+            com = com.limit(limit)
+        if sort_field is not None:
+            com = com.sort(sort_field, sort_order)
+
+        return com
 
     """
         A specific find method to read the oplog with a tailable cursor

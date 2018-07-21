@@ -92,6 +92,12 @@ class Configuration:
         return self.conf['internal']['test_write_document_bytes']
 
     """
+        Number of threads to use for the synchronisation. The thread for the oplog is not counted in it and it will be automatically added
+    """
+    def internal_threads(self):
+        return int(max(1,self.conf['internal']['threads']))
+
+    """
         Indicates if we are in a development mode (= clean database before mount for example) or not.
     """
     def is_development(self):

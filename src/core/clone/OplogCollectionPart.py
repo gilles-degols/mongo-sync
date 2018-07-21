@@ -34,35 +34,28 @@ class OplogCollectionPart(CollectionPart):
         st = time.time()
         subset = []
         n = 0
-        try:
-            while cursor.alive:
-                for doc in cursor:
-                    subset.append(doc)
-                    n += 1
-                    if len(subset) >= limit_write:
-                        self.insert_subset(subset)
-                        self.previous_id = doc['ts']
-                        subset = []
+        while cursor.alive:
+            for doc in cursor:
+                subset.append(doc)
+                n += 1
+                if len(subset) >= limit_write:
+                    self.insert_subset(subset)
+                    self.previous_id = doc['ts']
+                    subset = []
 
-                        # To replicate the expected behavior of this method versus the CollectionPart implementation, we
-                        # stop reading and wait for the next call
-                        break
-
-                if n >= limit_write:
+                    # To replicate the expected behavior of this method versus the CollectionPart implementation, we
+                    # stop reading and wait for the next call
                     break
-                else:
-                    # If there is no new document for 1 second, the iteration on the cursor stop, so we wait a bit before trying again
-                    if len(subset) >= 1:
-                        self.insert_subset(subset)
-                        self.previous_id = subset[-1]['ts']
-                        subset = []
-                time.sleep(1)
 
-        except KeyboardInterrupt:
-            print('KeyboardInterrupt exception received, store the last oplog entries then stop.')
-            self.insert_subset(subset)
-            subset = []
-            exit(0)
+            if n >= limit_write:
+                break
+            else:
+                # If there is no new document for 1 second, the iteration on the cursor stop, so we wait a bit before trying again
+                if len(subset) >= 1:
+                    self.insert_subset(subset)
+                    self.previous_id = subset[-1]['ts']
+                    subset = []
+            time.sleep(1)
 
         if len(subset) >= 1:
             self.insert_subset(subset)

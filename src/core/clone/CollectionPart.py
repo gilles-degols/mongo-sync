@@ -49,7 +49,7 @@ class CollectionPart:
     """
     def sync(self):
         average_object_size = self.coll_stats['avgObjSize']
-        expected_documents  = int(self.coll_stats['count'] / self.total_seeds) # It can increase but it's not a problem, it's only used for logging
+        expected_documents  = int(max(1,self.coll_stats['count'] / self.total_seeds)) # It can increase but it's not a problem, it's only used for logging
 
         # Write limit is 16MB, so we put a security factor by only using ~12 MB
         limit_write = int(12 * (1024 ** 2) / average_object_size)
@@ -75,11 +75,11 @@ class CollectionPart:
             objects_in_it = self.continue_fetching(raw_stats['quantity'], limit_read)
 
             i += 1
-            if i % 50 == 0:
+            if i % 50 == 0 or True:
                 if offset >= expected_documents:
                     # To have better logs, we check the remaining entries
                     self.coll_stats = self.mongo_primary.collection_stats(db=self.db, coll=self.coll)
-                    expected_documents = int(self.coll_stats['count'] / self.total_seeds)
+                    expected_documents = int(max(1,self.coll_stats['count'] / self.total_seeds))
 
                 ratio = int(1000 * offset / expected_documents)/10 # To have the format 100.0%
                 dt = time.time() - st

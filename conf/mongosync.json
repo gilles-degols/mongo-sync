@@ -12,7 +12,8 @@
   },
   "internal": {
     "database": "mongosync",
-    "maximum_seeds": 1000,
+    "maximum_seeds": 100,
+    "threads": 5,
     "test_write_collection": "testWrite",
     "test_write_size_GB": 5,
     "test_write_document_bytes": 10240
