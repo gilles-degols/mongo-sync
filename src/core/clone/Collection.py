@@ -24,6 +24,9 @@ class Collection:
         # Drop / Create the destination collection
         self.check_collection()
 
+        # Add indexes
+        self.copy_indexes()
+
         # Get the various seeds
         seeds = self.list_seeds()
         if len(seeds) == 0:
@@ -109,6 +112,24 @@ class Collection:
                 capped_max = None
 
             self.mongo_secondary.create_collection(self.db, self.coll, capped=True, max=capped_max, max_size=capped_max_size)
+
+    """
+        It is better to copy indexes directly, before copying the data. That way we directly have the TTL working, but we also
+        do not need to read all data at the end to create the indexes (if Mongo is on a NFS mount, you will lose a lot of
+        time just for that).
+        Even if the insert performance will be "worst", at the end, it should not matter a lot with the multi-threading copy
+        of mongosync 
+    """
+    def copy_indexes(self):
+        expected_indexes = self.mongo_primary.get_indexes(self.db, self.coll)
+        for name in expected_indexes:
+            index = expected_indexes[name]
+            options = index
+            options['keys'] = index['key']
+            options['name'] = name
+            del index['key']
+
+            self.mongo_secondary.create_index(self.db, self.coll, options)
 
 
     def __str__(self):

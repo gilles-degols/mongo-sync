@@ -12,7 +12,7 @@ class TestWrite:
         self.coll_expected_size = self.configuration.internal_test_write_size()
         self.document_size = self.configuration.internal_test_write_document_size()
 
-        self.string_seed = TestWrite.generate_string_seed(10*1024)
+        self.string_seed = TestWrite.generate_string_seed(50*int(max(1024,self.document_size)))
 
         self.mongo = Mongo(self.configuration, is_primary=False)
 
@@ -63,5 +63,6 @@ class TestWrite:
     """
     def random_string_from_seed(self, size):
         # In fact, really not random, but whatever, we'll hope MongoDB will not be able to compress the data too efficiently
+        print('Generate random string seed, it might take some time...')
         start = random.randint(0,len(self.string_seed) - size)
         return self.string_seed[start:start+size]

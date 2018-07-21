@@ -96,8 +96,8 @@ class Mongo:
         Create an index
     """
     @retry_connection
-    def create_index(self, db, coll, index):
-        return self.instance[db][coll].create_index(index)
+    def create_index(self, db, coll, options):
+        return self.instance[db][coll].create_index(**options)
 
     """
         Simply retrieve any document
@@ -219,6 +219,21 @@ class Mongo:
             result = {}
 
         return result
+
+    """
+        Information about each index on a collection
+        {
+            <index_id> : {
+                'key': [
+                    (<field_name>, <order>)
+                ]
+                <optional_elements>
+            }
+        }
+    """
+    @retry_connection
+    def get_indexes(self, db, coll):
+        return self.instance[db][coll].index_information()
 
 
     """ 
