@@ -3,6 +3,7 @@ package clone.structure
 import com.google.inject.Inject
 import com.mongodb.client.model.IndexOptions
 import org.bson.types.ObjectId
+import org.slf4j.LoggerFactory
 import play.api.libs.json.{JsObject, Json}
 import services.{ConfigurationService, MongoService, SectionId}
 
@@ -11,6 +12,7 @@ import scala.util.Try
 class Collection (conf: ConfigurationService, val db: String, val coll: String, primary: MongoService, secondary: MongoService) {
   var collStats: CollectionStats = primary.getCollectionStats(db, coll)
   var previousId: Option[String] = None
+  val logger = LoggerFactory.getLogger("mongosync.app.clone.structure.Collection")
 
   /**
     * In charge of preparing the collection to synchronize, returns the various CollectionParts needed to synchronize everything
@@ -31,8 +33,8 @@ class Collection (conf: ConfigurationService, val db: String, val coll: String, 
 
     // Create and return the list of CollectionParts for the current Collection
     var previousSectionId = sectionIds.head
-    sectionIds.drop(1).map(sectionId => {
-      val collPart = if(db == "local" && coll == "oplog.rs") new OplogCollectionPart(conf, this, primary, secondary, previousSectionId, sectionId, sectionIds.size)
+    sectionIds.drop(1).map(sectionId => { //TODO: Enlever le "&& true" après test
+      val collPart = if(db == "local" && coll == "oplog.rs" && false) new OplogCollectionPart(conf, this, primary, secondary, previousSectionId, sectionId, sectionIds.size)
       else new BasicCollectionPart(conf, this, primary, secondary, previousSectionId, sectionId, sectionIds.size)
 
       previousSectionId = sectionId
@@ -82,7 +84,7 @@ class Collection (conf: ConfigurationService, val db: String, val coll: String, 
     }
 
     // For the internal databases, we want to remove them by default, to avoid any problem (one exception: the oplog)
-    if(destinationStats.isDefined && db == "local" && coll != "oplog.rs") { // Note: this was deactivated in python
+    if(destinationStats.isDefined && db == "local" && coll != "oplog.rs" && coll != "system.replset") { // Note: this was deactivated in python
       secondary.dropCollection(db, coll)
       destinationStats = None
     }

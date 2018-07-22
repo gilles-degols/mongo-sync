@@ -6,6 +6,7 @@ import com.mongodb.client.model._
 import com.mongodb.client.model.Filters._
 import com.mongodb.client.model.Projections._
 import java.util
+import java.util.Date
 import java.util.concurrent.Executors
 
 import scala.collection.JavaConverters._
@@ -14,11 +15,13 @@ import com.google.inject.{Inject, Singleton}
 import org.bson.Document
 import org.bson.types.ObjectId
 import org.joda.time.DateTime
+import org.slf4j.LoggerFactory
 import play.api.Configuration
 import play.api.libs.json.{JsObject, Json}
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Success, Try}
 
 trait SortType {
   def json: JsObject
@@ -30,7 +33,9 @@ case class SortDesc() extends SortType {
   def json: JsObject = Json.obj("_id" -> -1)
 }
 
-case class SectionId(oid: Option[ObjectId])
+case class SectionId(oid: Option[ObjectId], other: Option[String] = None) {
+  def toQuery: JsObject = Json.obj("$oid" -> oid.get.toHexString)
+}
 
 /**
   * We will have two instances of MongoService, as we connect to two separate databases
@@ -38,6 +43,7 @@ case class SectionId(oid: Option[ObjectId])
   * @param hostname
   */
 class MongoService @Inject()(conf: ConfigurationService, hostname: String) {
+  val logger = LoggerFactory.getLogger("mongosync.services.MongoService")
   val pool = Executors.newFixedThreadPool(10)
   implicit val ec =  ExecutionContext.fromExecutor(pool)
   val mongoClient: client.MongoClient = MongoClients.create(s"mongodb://$hostname")
@@ -47,7 +53,7 @@ class MongoService @Inject()(conf: ConfigurationService, hostname: String) {
   }
 
   def toJson(obj: Document): JsObject = {
-    Json.parse(obj.toString).as[JsObject]
+    Json.parse(obj.toJson.toString).as[JsObject]
   }
 
   def getObjectId(obj: JsObject): Option[ObjectId] = {
@@ -85,20 +91,21 @@ class MongoService @Inject()(conf: ConfigurationService, hostname: String) {
     * @param query
     * @return
     */
-  def find(db: String, coll: String, query: JsObject, skip: Int, limit: Int, projection: JsObject, sortType: SortType): Future[FindIterable[Document]] = Future {
-    getCollection(db, coll).find(toDoc(query)).skip(skip).limit(limit).projection(toDoc(projection)).sort(toDoc(sortType.json))
+  def find(db: String, coll: String, query: JsObject, skip: Int, limit: Int, projection: JsObject, sortType: SortType = null): FindIterable[Document] = {
+    if(sortType != null) getCollection(db, coll).find(toDoc(query)).skip(skip).limit(limit).projection(toDoc(projection)).sort(toDoc(sortType.json))
+    else getCollection(db, coll).find(toDoc(query)).skip(skip).limit(limit).projection(toDoc(projection))
   }
 
-  def findInOplog(db: String, coll: String, query: JsObject): Future[FindIterable[Document]] = Future {
-    getCollection(db, coll).find(toDoc(query)).cursorType(CursorType.TailableAwait)
+  def findInOplog(query: JsObject): FindIterable[Document] = {
+    getCollection("local", "oplog.rs").find(toDoc(query)).cursorType(CursorType.TailableAwait)
   }
 
   def findOne(db: String, coll: String, query: JsObject, sortType: SortType): Option[JsObject] = {
-    toJsonList(Await.result(find(db, coll, query, skip = 0, limit = 1, projection = Json.obj(), sortType = sortType), Duration.Inf).iterator()).headOption
+    toJsonList(find(db, coll, query, skip = 0, limit = 1, projection = Json.obj(), sortType = sortType).iterator()).headOption
   }
 
   def first(db: String, coll: String): Option[JsObject] = {
-    toJsonList(Await.result(find(db, coll, Json.obj(), skip = 0, limit = 1, projection = Json.obj(), sortType = SortAsc()), Duration.Inf).iterator()).headOption
+    toJsonList(find(db, coll, Json.obj(), skip = 0, limit = 1, projection = Json.obj(), sortType = SortAsc()).iterator()).headOption
   }
 
   def listDatabases: List[String] = {
@@ -139,11 +146,19 @@ class MongoService @Inject()(conf: ConfigurationService, hostname: String) {
     * @param coll
     * @param docs
     */
-  def insertMany(db: String, coll: String, docs: List[Document]): Future[Unit] = Future {
+  def insertMany(db: String, coll: String, docs: List[Document]): Unit = {
     val options = new InsertManyOptions()
     options.ordered(false)
     options.bypassDocumentValidation(true)
-    getCollection(db, coll).insertMany(docs.asJava, options)
+    try{
+      getCollection(db, coll).insertMany(docs.asJava, options)
+    } catch {
+      case ex: MongoBulkWriteException =>
+        // As ordered is false, this is not a problem
+      case x: Throwable =>
+        logger.error("Error while inserting multiple documents")
+        throw x
+    }
   }
 
   /**
@@ -165,13 +180,13 @@ class MongoService @Inject()(conf: ConfigurationService, hostname: String) {
     }
 
     // Arbitrarily generate object ids between the minimal/maximal values
-    val firstTimestamp = getObjectId(first.get).get.getTimestamp
+    val firstTimestamp = getObjectId(first.get).get.getTimestamp // Timestamp in s
     val lastTimestamp = getObjectId(last.get).get.getTimestamp
-    val step: Int = math.max(lastTimestamp - firstTimestamp, 1)
+    val step: Int = math.max((lastTimestamp - firstTimestamp) / quantity, 1)
 
     for(offset <- firstTimestamp to lastTimestamp by step) {
-      val currentDate = new DateTime(offset)
-      val sectionId = SectionId(oid = getObjectId(first.get))
+      val currentDate = new DateTime(offset * 1000L).toDate // Need to provide a timestamp in ms
+      val sectionId = SectionId(oid = Option(new ObjectId(currentDate)))
       result = result ::: List(sectionId)
     }
 
